@@ -19,7 +19,8 @@ target_precompile_headers(CommandLineWinRT
 
 target_link_libraries(CommandLineWinRT
     PRIVATE
-        RuntimeComponentCppWinRT
+        CppWinRT
+        RuntimeComponent
 )
 
 add_custom_command(TARGET CommandLineWinRT POST_BUILD

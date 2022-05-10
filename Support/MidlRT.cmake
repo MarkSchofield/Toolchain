@@ -205,7 +205,7 @@ endfunction()
 #----------------------------------------------------------------------------------------------------------------------
 #
 #----------------------------------------------------------------------------------------------------------------------
-function(_cppwinrtTargetProjection TARGET MERGED_WINMD_FILE)
+function(_cppwinrtImplementationProjection TARGET MERGED_WINMD_FILE)
     get_target_property(TARGET_NAME ${TARGET} "NAME")
 
     set(CPPWINRT_COMMAND "")
@@ -214,15 +214,15 @@ function(_cppwinrtTargetProjection TARGET MERGED_WINMD_FILE)
     list(APPEND CPPWINRT_COMMAND -name ${TARGET_NAME})
     list(APPEND CPPWINRT_COMMAND -pch .)
     list(APPEND CPPWINRT_COMMAND -prefix)
-    list(APPEND CPPWINRT_COMMAND -comp "\"${CMAKE_CURRENT_BINARY_DIR}/Generated Files/sources\"")
+    list(APPEND CPPWINRT_COMMAND -comp "\"${CMAKE_CURRENT_BINARY_DIR}/CppWinRTImplementation/sources\"")
     list(APPEND CPPWINRT_COMMAND -opt)
     list(APPEND CPPWINRT_COMMAND -in "\"${MERGED_WINMD_FILE}\"")
     foreach(PLATFORM_REFERENCE_WINMD IN LISTS PLATFORM_REFERENCE_WINMDS)
         list(APPEND CPPWINRT_COMMAND -ref "\"${PLATFORM_REFERENCE_WINMD}\"")
     endforeach()
-    list(APPEND CPPWINRT_COMMAND -out "\"${CMAKE_CURRENT_BINARY_DIR}/Generated Files\"")
+    list(APPEND CPPWINRT_COMMAND -out "\"${CMAKE_CURRENT_BINARY_DIR}/CppWinRTImplementation\"")
 
-    set(CPPWINRT_COMMAND_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/cppwinrt.${TARGET_NAME}.cmd)
+    set(CPPWINRT_COMMAND_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/cppwinrt.Implementation${TARGET_NAME}.cmd)
     list(JOIN CPPWINRT_COMMAND " " CPPWINRT_COMMAND_LINE)
     file(GENERATE OUTPUT ${CPPWINRT_COMMAND_SCRIPT} CONTENT "\
 @echo off
@@ -230,10 +230,10 @@ ${CPPWINRT_COMMAND_LINE}
 ")
 
     add_custom_command(
-            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Generated Files/module.g.cpp"
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTImplementation/module.g.cpp"
             COMMAND ${CPPWINRT_COMMAND_SCRIPT}
             DEPENDS ${MERGED_WINMD_FILE} ${CPPWINRT_COMMAND_SCRIPT}
-            COMMENT "Projecting ${TARGET_NAME}.winmd"
+            COMMENT "Projecting ${TARGET_NAME}.winmd implementation"
             WORKING_DIRECTORY ${TARGET_SOURCE_DIR}
         )
 endfunction()
@@ -241,26 +241,38 @@ endfunction()
 #----------------------------------------------------------------------------------------------------------------------
 #
 #----------------------------------------------------------------------------------------------------------------------
-function(_cppwinrtPlatformProjection)
+function(_cppwinrtInterfaceProjection TARGET MERGED_WINMD_FILE)
+    get_target_property(TARGET_NAME ${TARGET} "NAME")
+
     set(CPPWINRT_COMMAND "")
     list(APPEND CPPWINRT_COMMAND "\"${NUGET_MICROSOFT_WINDOWS_CPPWINRT}/bin/cppwinrt.exe\"")
+    list(APPEND CPPWINRT_COMMAND -overwrite)
+    list(APPEND CPPWINRT_COMMAND -name ${TARGET_NAME})
+    list(APPEND CPPWINRT_COMMAND -pch .)
+    list(APPEND CPPWINRT_COMMAND -prefix)
+    list(APPEND CPPWINRT_COMMAND -opt)
+    list(APPEND CPPWINRT_COMMAND -in "\"${MERGED_WINMD_FILE}\"")
     foreach(PLATFORM_REFERENCE_WINMD IN LISTS PLATFORM_REFERENCE_WINMDS)
-        list(APPEND CPPWINRT_COMMAND -in "\"${PLATFORM_REFERENCE_WINMD}\"")
+        list(APPEND CPPWINRT_COMMAND -ref "\"${PLATFORM_REFERENCE_WINMD}\"")
     endforeach()
-    list(APPEND CPPWINRT_COMMAND -out "\"${CMAKE_CURRENT_BINARY_DIR}/Generated Files\"")
+    list(APPEND CPPWINRT_COMMAND -out "\"${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface\"")
 
-    set(CPPWINRT_COMMAND_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/cppwinrt.__platform__.cmd)
+    set(CPPWINRT_COMMAND_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/cppwinrt.Interface${TARGET_NAME}.cmd)
     list(JOIN CPPWINRT_COMMAND " " CPPWINRT_COMMAND_LINE)
     file(GENERATE OUTPUT ${CPPWINRT_COMMAND_SCRIPT} CONTENT "\
-    @echo off
-    ${CPPWINRT_COMMAND_LINE}
-    ")
+@echo off
+${CPPWINRT_COMMAND_LINE}
+")
 
     add_custom_command(
-            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Generated Files/winrt/base.h"
+            OUTPUT
+                "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/${TARGET_NAME}.h"
+                "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/impl/${TARGET_NAME}.0.h"
+                "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/impl/${TARGET_NAME}.1.h"
+                "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/impl/${TARGET_NAME}.2.h"
             COMMAND ${CPPWINRT_COMMAND_SCRIPT}
             DEPENDS ${MERGED_WINMD_FILE} ${CPPWINRT_COMMAND_SCRIPT}
-            COMMENT "Projecting 'Platform' .winmd"
+            COMMENT "Projecting ${TARGET_NAME}.winmd interface"
             WORKING_DIRECTORY ${TARGET_SOURCE_DIR}
         )
 endfunction()
@@ -270,6 +282,7 @@ endfunction()
 #----------------------------------------------------------------------------------------------------------------------
 function(_process_target_midl TARGET)
     get_target_property(TARGET_SOURCE_DIR ${TARGET} SOURCE_DIR)
+    get_target_property(TARGET_NAME ${TARGET} "NAME")
     get_target_property(IDL_FILES ${TARGET} SOURCES)
     list(FILTER IDL_FILES INCLUDE REGEX "\.idl$")
 
@@ -280,18 +293,26 @@ function(_process_target_midl TARGET)
     _mergeWinMdFiles(${TARGET} ${WINMD_FILES} TARGET_WINMD_FILE)
 
     # Use cppwinrt.exe to generate the projection from the .winmd file.
-    _cppwinrtTargetProjection(${TARGET} ${TARGET_WINMD_FILE})
+    _cppwinrtImplementationProjection(${TARGET} ${TARGET_WINMD_FILE})
 
-    _cppwinrtPlatformProjection()
+    _cppwinrtInterfaceProjection(${TARGET} ${TARGET_WINMD_FILE})
 
     target_include_directories(${TARGET}
         PRIVATE
             "${TARGET_SOURCE_DIR}"
-            "${CMAKE_CURRENT_BINARY_DIR}/Generated Files"
+            "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTImplementation"
+        PUBLIC
+            "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface"
     )
 
+    # If we're optimized (which we're currently hard-coded to), each class makes a '.g.cpp' file
+    #
     target_sources(${TARGET}
         PRIVATE
-            "${CMAKE_CURRENT_BINARY_DIR}/Generated Files/module.g.cpp"
+            ${CMAKE_CURRENT_BINARY_DIR}/CppWinRTImplementation/module.g.cpp
+            "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/${TARGET_NAME}.h"
+            "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/impl/${TARGET_NAME}.0.h"
+            "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/impl/${TARGET_NAME}.1.h"
+            "${CMAKE_CURRENT_BINARY_DIR}/CppWinRTInterface/impl/${TARGET_NAME}.2.h"
     )
 endfunction()
